@@ -8,8 +8,8 @@ import logging
 from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from .core import validator
-from .models.schemas import (
+from backend.core import validator
+from backend.models.schemas import (
     ExportRequest,
     ExportResponse,
     ParseRequest,

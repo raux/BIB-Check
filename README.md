@@ -76,6 +76,11 @@ You need to run both the backend and frontend servers.
 ```bash
 # From the project root
 source backend/venv/bin/activate   # On Windows: backend\venv\Scripts\activate
+
+# Option 1 - use the entry-point script (recommended, avoids multiprocessing issues on macOS/Windows)
+python run.py
+
+# Option 2 - invoke uvicorn directly
 uvicorn backend.main:app --reload --port 8000
 ```
 

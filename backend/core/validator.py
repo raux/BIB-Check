@@ -19,7 +19,7 @@ from typing import Any
 
 from rapidfuzz import fuzz
 
-from ..models.schemas import (
+from backend.models.schemas import (
     BibEntry,
     DuplicateInfo,
     EntryStatus,
@@ -27,7 +27,7 @@ from ..models.schemas import (
     ParseResponse,
     ValidateResponse,
 )
-from ..services import arxiv_client, dblp_client
+from backend.services import arxiv_client, dblp_client
 
 logger = logging.getLogger(__name__)
 
