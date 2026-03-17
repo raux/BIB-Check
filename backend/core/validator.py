@@ -57,16 +57,20 @@ def _parse_bibtex(bib_content: str) -> list[BibEntry]:
     try:
         import bibtexparser  # type: ignore[import-untyped]
 
-        library = bibtexparser.parse_string(bib_content)
+        database = bibtexparser.loads(bib_content)
         entries: list[BibEntry] = []
-        for raw_entry in library.entries:
-            fields: dict[str, str] = {}
-            for field in raw_entry.fields:
-                fields[field.key] = str(field.value)
+        for raw_entry in database.entries:
+            entry_type = raw_entry.get("ENTRYTYPE", "misc")
+            key = raw_entry.get("ID", "unknown")
+            fields: dict[str, str] = {
+                k: str(v)
+                for k, v in raw_entry.items()
+                if k not in ("ENTRYTYPE", "ID")
+            }
             entries.append(
                 BibEntry(
-                    key=raw_entry.key,
-                    entry_type=raw_entry.entry_type,
+                    key=key,
+                    entry_type=entry_type,
                     fields=fields,
                     status=EntryStatus.unverified,
                 )
