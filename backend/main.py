@@ -9,9 +9,11 @@ from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.core import validator
+from backend.core.log_handler import MemoryLogHandler
 from backend.models.schemas import (
     ExportRequest,
     ExportResponse,
+    LogEntry,
     ParseRequest,
     ParseResponse,
     ValidateRequest,
@@ -20,6 +22,13 @@ from backend.models.schemas import (
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Attach memory log handler to the root "backend" logger so all backend
+# log messages are captured and can be served to the UI.
+_memory_handler = MemoryLogHandler(capacity=1000)
+_memory_handler.setLevel(logging.DEBUG)
+_memory_handler.setFormatter(logging.Formatter("%(name)s - %(message)s"))
+logging.getLogger("backend").addHandler(_memory_handler)
 
 app = FastAPI(
     title="BibValidate-AI",
@@ -66,7 +75,18 @@ async def validate_entries(request: ValidateRequest) -> ValidateResponse:
     """Validate entries against ArXiv / DBLP / Scholar APIs."""
     if not request.entries:
         raise HTTPException(status_code=400, detail="entries must not be empty.")
-    return await validator.validate_entries(request.entries)
+    # Drain any stale logs before starting
+    _memory_handler.drain()
+    response = await validator.validate_entries(request.entries)
+    # Attach logs produced during validation
+    response.logs = _memory_handler.drain()
+    return response
+
+
+@app.get("/logs", response_model=list[LogEntry])
+async def get_logs() -> list[LogEntry]:
+    """Return recent backend log messages."""
+    return _memory_handler.get_entries()
 
 
 @app.post("/export", response_model=ExportResponse)

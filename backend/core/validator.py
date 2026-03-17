@@ -4,7 +4,7 @@ Responsibilities
 ----------------
 1. Parse a raw BibTeX string into :class:`BibEntry` objects.
 2. Query ArXiv / DBLP / Scholar for each entry and produce
-   :class:`FieldSuggestion` objects.
+   :class:`FieldSuggestion` and :class:`ApiMatch` objects.
 3. Run fuzzy duplicate detection across all entries.
 4. Determine the final :class:`EntryStatus` for each entry.
 5. Serialize accepted suggestions back to a BibTeX string.
@@ -20,6 +20,7 @@ from typing import Any
 from rapidfuzz import fuzz
 
 from backend.models.schemas import (
+    ApiMatch,
     BibEntry,
     DuplicateInfo,
     EntryStatus,
@@ -27,7 +28,7 @@ from backend.models.schemas import (
     ParseResponse,
     ValidateResponse,
 )
-from backend.services import arxiv_client, dblp_client
+from backend.services import arxiv_client, dblp_client, scholar_client
 
 logger = logging.getLogger(__name__)
 
@@ -152,36 +153,60 @@ def detect_duplicates(entries: list[BibEntry]) -> list[BibEntry]:
 # ---------------------------------------------------------------------------
 
 async def _validate_entry(entry: BibEntry) -> BibEntry:
-    """Query ArXiv and DBLP for a single entry and populate suggestions."""
+    """Query ArXiv, DBLP, and Scholar for a single entry and populate matches & suggestions."""
     title = entry.fields.get("title", "")
     year = entry.fields.get("year", "")
     arxiv_id = entry.fields.get("arxiv_id") or entry.fields.get("eprint", "")
 
     suggestions: list[FieldSuggestion] = []
+    api_matches: list[ApiMatch] = []
 
     # --- ArXiv ---
     try:
         if arxiv_id:
             arxiv_results = [r for r in [await arxiv_client.search_by_id(arxiv_id)] if r]
         elif title:
-            arxiv_results = await arxiv_client.search_by_title(title, max_results=1)
+            arxiv_results = await arxiv_client.search_by_title(title, max_results=3)
         else:
             arxiv_results = []
 
-        for result in arxiv_results[:1]:
+        logger.info(
+            "ArXiv returned %d result(s) for entry '%s'",
+            len(arxiv_results),
+            entry.key,
+        )
+
+        for idx, result in enumerate(arxiv_results):
             source_title = result.get("title", "")
-            if source_title:
-                confidence = compute_similarity(title, source_title)
-                if confidence < 1.0:
-                    suggestions.append(
-                        FieldSuggestion(
-                            field_name="title",
-                            original_value=title,
-                            suggested_value=source_title,
-                            confidence=confidence,
-                            source="arxiv",
-                        )
+            confidence = compute_similarity(title, source_title) if title and source_title else 0.0
+            authors = result.get("authors", [])
+            match = ApiMatch(
+                source="arxiv",
+                title=source_title,
+                authors=authors if isinstance(authors, list) else [authors],
+                year=result.get("year", ""),
+                venue="",
+                confidence=confidence,
+                fields={
+                    "title": source_title,
+                    "authors": ", ".join(authors) if isinstance(authors, list) else str(authors),
+                    "year": result.get("year", ""),
+                    "arxiv_id": result.get("arxiv_id", ""),
+                },
+            )
+            api_matches.append(match)
+
+            # Generate suggestion from the first ArXiv match only
+            if idx == 0 and source_title and confidence < 1.0:
+                suggestions.append(
+                    FieldSuggestion(
+                        field_name="title",
+                        original_value=title,
+                        suggested_value=source_title,
+                        confidence=confidence,
+                        source="arxiv",
                     )
+                )
     except Exception as exc:
         logger.warning("ArXiv validation error for key %s: %s", entry.key, exc)
 
@@ -189,31 +214,55 @@ async def _validate_entry(entry: BibEntry) -> BibEntry:
     try:
         if title:
             dblp_results = await dblp_client.search_by_title_and_year(
-                title, year=year, max_results=1
+                title, year=year, max_results=3
             )
-            for result in dblp_results[:1]:
-                source_title = result.get("title", "")
-                if source_title:
-                    confidence = compute_similarity(title, source_title)
-                    if confidence < 1.0:
-                        # Only add if different from arxiv suggestion
-                        already = any(
-                            s.field_name == "title" and s.source == "arxiv"
-                            for s in suggestions
-                        )
-                        if not already or confidence > (
-                            suggestions[0].confidence if suggestions else 0
-                        ):
-                            suggestions.append(
-                                FieldSuggestion(
-                                    field_name="title",
-                                    original_value=title,
-                                    suggested_value=source_title,
-                                    confidence=confidence,
-                                    source="dblp",
-                                )
+        else:
+            dblp_results = []
+
+        logger.info(
+            "DBLP returned %d result(s) for entry '%s'",
+            len(dblp_results),
+            entry.key,
+        )
+
+        for idx, result in enumerate(dblp_results):
+            source_title = result.get("title", "")
+            confidence = compute_similarity(title, source_title) if title and source_title else 0.0
+            authors = result.get("authors", [])
+            venue = result.get("venue", "")
+            match = ApiMatch(
+                source="dblp",
+                title=source_title,
+                authors=authors if isinstance(authors, list) else [authors],
+                year=result.get("year", ""),
+                venue=venue,
+                confidence=confidence,
+                fields={
+                    "title": source_title,
+                    "authors": ", ".join(authors) if isinstance(authors, list) else str(authors),
+                    "year": result.get("year", ""),
+                    "venue": venue,
+                },
+            )
+            api_matches.append(match)
+
+            # Generate suggestions from best DBLP match
+            if idx == 0:
+                if source_title and confidence < 1.0:
+                    arxiv_title_conf = next(
+                        (s.confidence for s in suggestions if s.field_name == "title" and s.source == "arxiv"),
+                        0.0,
+                    )
+                    if arxiv_title_conf == 0.0 or confidence > arxiv_title_conf:
+                        suggestions.append(
+                            FieldSuggestion(
+                                field_name="title",
+                                original_value=title,
+                                suggested_value=source_title,
+                                confidence=confidence,
+                                source="dblp",
                             )
-                venue = result.get("venue", "")
+                        )
                 if venue and "journal" not in entry.fields and "booktitle" not in entry.fields:
                     suggestions.append(
                         FieldSuggestion(
@@ -227,7 +276,62 @@ async def _validate_entry(entry: BibEntry) -> BibEntry:
     except Exception as exc:
         logger.warning("DBLP validation error for key %s: %s", entry.key, exc)
 
+    # --- Google Scholar ---
+    try:
+        if title:
+            loop = asyncio.get_event_loop()
+            scholar_results = await loop.run_in_executor(
+                None, scholar_client.search_by_title, title, 3
+            )
+        else:
+            scholar_results = []
+
+        logger.info(
+            "Scholar returned %d result(s) for entry '%s'",
+            len(scholar_results),
+            entry.key,
+        )
+
+        for idx, result in enumerate(scholar_results):
+            source_title = result.get("title", "")
+            confidence = compute_similarity(title, source_title) if title and source_title else 0.0
+            authors = result.get("authors", [])
+            venue = result.get("venue", "")
+            match = ApiMatch(
+                source="scholar",
+                title=source_title,
+                authors=authors if isinstance(authors, list) else [authors],
+                year=result.get("year", ""),
+                venue=venue,
+                confidence=confidence,
+                fields={
+                    "title": source_title,
+                    "authors": ", ".join(authors) if isinstance(authors, list) else str(authors),
+                    "year": result.get("year", ""),
+                    "venue": venue,
+                    "citation_count": str(result.get("citation_count", "")),
+                },
+            )
+            api_matches.append(match)
+
+            # Generate suggestion from best Scholar match
+            if idx == 0 and source_title and confidence < 1.0:
+                existing_sources = {s.source for s in suggestions if s.field_name == "title"}
+                if "scholar" not in existing_sources:
+                    suggestions.append(
+                        FieldSuggestion(
+                            field_name="title",
+                            original_value=title,
+                            suggested_value=source_title,
+                            confidence=confidence,
+                            source="scholar",
+                        )
+                    )
+    except Exception as exc:
+        logger.warning("Scholar validation error for key %s: %s", entry.key, exc)
+
     entry.suggestions = suggestions
+    entry.api_matches = api_matches
 
     # Determine status
     high_conf = any(s.confidence >= HIGH_CONFIDENCE_THRESHOLD for s in suggestions)

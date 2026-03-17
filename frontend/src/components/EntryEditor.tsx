@@ -1,11 +1,19 @@
 import React, { useState } from "react";
-import type { BibEntry, FieldSuggestion } from "../types";
+import type { BibEntry, FieldSuggestion, ApiMatch } from "../types";
 import { StatusBadge } from "./ui/StatusBadge";
 import { SimilarityBar } from "./ui/SimilarityBar";
 
 interface EntryEditorProps {
   entry: BibEntry;
   onAcceptSuggestion: (entryKey: string, suggestion: FieldSuggestion) => void;
+}
+
+/** All fields we display in the side-by-side comparison. */
+const COMPARISON_FIELDS = ["title", "authors", "year", "venue", "arxiv_id", "citation_count"] as const;
+
+/** Derive a flat value for a given field from an API match. */
+function matchFieldValue(match: ApiMatch, field: string): string {
+  return match.fields[field] ?? "";
 }
 
 export const EntryEditor: React.FC<EntryEditorProps> = ({
@@ -28,15 +36,27 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
     });
   };
 
-  // Build comparison rows: all fields + any suggestion fields not already present
+  // Build suggestion lookup for Accept toggles
   const suggestionMap: Record<string, FieldSuggestion[]> = {};
   for (const s of entry.suggestions) {
     if (!suggestionMap[s.fieldName]) suggestionMap[s.fieldName] = [];
     suggestionMap[s.fieldName].push(s);
   }
 
+  // Group API matches by source
+  const matchesBySource: Record<string, ApiMatch[]> = {};
+  for (const m of entry.apiMatches ?? []) {
+    if (!matchesBySource[m.source]) matchesBySource[m.source] = [];
+    matchesBySource[m.source].push(m);
+  }
+  const sources = Object.keys(matchesBySource);
+
+  // Collect all field names from original + matches for the comparison table
   const allFieldNames = Array.from(
-    new Set([...Object.keys(entry.fields), ...Object.keys(suggestionMap)])
+    new Set([
+      ...Object.keys(entry.fields),
+      ...Object.keys(suggestionMap),
+    ])
   );
 
   return (
@@ -68,10 +88,96 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
         </pre>
       </div>
 
-      {/* Comparison table */}
+      {/* Side-by-side API matches comparison */}
+      {sources.length > 0 && (
+        <div className="px-4 py-3 border-b border-gray-200 overflow-x-auto">
+          <p className="text-xs font-semibold text-gray-500 uppercase mb-2">
+            API Matches — Side-by-Side Comparison
+          </p>
+          <table className="w-full text-sm border-collapse min-w-[600px]">
+            <thead>
+              <tr className="text-xs text-gray-500 border-b border-gray-200">
+                <th className="text-left pb-2 pr-3 w-24">Field</th>
+                <th className="text-left pb-2 pr-3 bg-gray-50">Original</th>
+                {sources.map((src) =>
+                  matchesBySource[src].map((_, idx) => (
+                    <th
+                      key={`${src}-${idx}`}
+                      className="text-left pb-2 pr-3"
+                    >
+                      <span className="capitalize font-semibold">{src}</span>
+                      {matchesBySource[src].length > 1 && (
+                        <span className="text-gray-400 ml-1">#{idx + 1}</span>
+                      )}
+                    </th>
+                  ))
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {/* Confidence row */}
+              <tr className="border-b border-gray-100">
+                <td className="py-2 pr-3 font-mono text-xs text-gray-500">confidence</td>
+                <td className="py-2 pr-3 bg-gray-50 text-gray-400 text-xs">—</td>
+                {sources.map((src) =>
+                  matchesBySource[src].map((m, idx) => (
+                    <td key={`conf-${src}-${idx}`} className="py-2 pr-3">
+                      <SimilarityBar value={m.confidence} />
+                    </td>
+                  ))
+                )}
+              </tr>
+              {COMPARISON_FIELDS.map((field) => {
+                const originalValue =
+                  field === "authors"
+                    ? entry.fields["author"] ?? ""
+                    : entry.fields[field] ?? "";
+                // Skip fields with no data anywhere
+                const hasData =
+                  originalValue ||
+                  sources.some((src) =>
+                    matchesBySource[src].some((m) => matchFieldValue(m, field))
+                  );
+                if (!hasData) return null;
+
+                return (
+                  <tr key={field} className="border-b border-gray-100">
+                    <td className="py-2 pr-3 font-mono text-xs text-gray-500 align-top">
+                      {field}
+                    </td>
+                    <td className="py-2 pr-3 bg-gray-50 text-gray-800 align-top text-xs">
+                      {originalValue || <span className="text-gray-300">—</span>}
+                    </td>
+                    {sources.map((src) =>
+                      matchesBySource[src].map((m, idx) => {
+                        const val = matchFieldValue(m, field);
+                        const isDifferent = val && val !== originalValue;
+                        return (
+                          <td
+                            key={`${field}-${src}-${idx}`}
+                            className={`py-2 pr-3 align-top text-xs ${
+                              isDifferent
+                                ? "text-indigo-700 font-medium bg-indigo-50"
+                                : "text-gray-600"
+                            }`}
+                          >
+                            {val || <span className="text-gray-300">—</span>}
+                          </td>
+                        );
+                      })
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Field-level suggestions with Accept toggles */}
       <div className="flex-1 overflow-y-auto px-4 py-3">
         <p className="text-xs font-semibold text-gray-500 uppercase mb-2">
-          Field Comparison
+          Field Comparison &amp; Suggestions
         </p>
         <table className="w-full text-sm border-collapse">
           <thead>
@@ -147,7 +253,7 @@ export const EntryEditor: React.FC<EntryEditorProps> = ({
           </tbody>
         </table>
 
-        {entry.suggestions.length === 0 && (
+        {entry.suggestions.length === 0 && (entry.apiMatches ?? []).length === 0 && (
           <p className="text-sm text-gray-400 mt-4 text-center">
             No suggestions for this entry.
           </p>
