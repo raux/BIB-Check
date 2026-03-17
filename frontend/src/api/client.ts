@@ -6,6 +6,7 @@
 import type {
   BibEntry,
   ExportResponse,
+  LogEntry,
   ParseResponse,
   ValidateResponse,
 } from "../types";
@@ -87,4 +88,14 @@ export async function exportBib(
     applyHighConfidence,
     confidenceThreshold,
   });
+}
+
+export async function fetchLogs(): Promise<LogEntry[]> {
+  const res = await fetch(`${BASE_URL}/logs`);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`API error ${res.status}: ${text}`);
+  }
+  const json = await res.json();
+  return toCamel(json) as LogEntry[];
 }

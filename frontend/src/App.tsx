@@ -3,7 +3,8 @@ import { DashboardHeader } from "./components/DashboardHeader";
 import { EntryList } from "./components/EntryList";
 import { EntryEditor } from "./components/EntryEditor";
 import { DropZone } from "./components/DropZone";
-import type { BibEntry, FieldSuggestion } from "./types";
+import { LogPanel } from "./components/LogPanel";
+import type { BibEntry, FieldSuggestion, LogEntry } from "./types";
 import {
   parseBib,
   uploadBibFile,
@@ -20,6 +21,8 @@ const App: React.FC = () => {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [logsVisible, setLogsVisible] = useState(false);
 
   const selectedEntry = entries.find((e) => e.key === selectedKey) ?? null;
 
@@ -68,6 +71,11 @@ const App: React.FC = () => {
         issuesFound: response.issuesFound,
         duplicatesIdentified: response.duplicatesIdentified,
       });
+      // Collect logs from the validation response
+      if (response.logs && response.logs.length > 0) {
+        setLogs((prev) => [...prev, ...response.logs]);
+        setLogsVisible(true);
+      }
       setAppState("validated");
     } catch (e) {
       setError(String(e));
@@ -118,6 +126,7 @@ const App: React.FC = () => {
     setEntries([]);
     setSelectedKey(null);
     setError(null);
+    setLogs([]);
     setStats({ total: 0, issuesFound: 0, duplicatesIdentified: 0 });
   };
 
@@ -202,6 +211,13 @@ const App: React.FC = () => {
           </div>
         </main>
       )}
+
+      {/* Backend log panel — always rendered at the bottom */}
+      <LogPanel
+        logs={logs}
+        visible={logsVisible}
+        onToggle={() => setLogsVisible((v) => !v)}
+      />
     </div>
   );
 };

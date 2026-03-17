@@ -8,9 +8,25 @@ export interface FieldSuggestion {
   source: "arxiv" | "dblp" | "scholar";
 }
 
+export interface ApiMatch {
+  source: "arxiv" | "dblp" | "scholar";
+  title: string;
+  authors: string[];
+  year: string;
+  venue: string;
+  confidence: number; // 0.0 – 1.0
+  fields: Record<string, string>;
+}
+
 export interface DuplicateInfo {
   duplicateOfKey: string;
   similarityScore: number;
+}
+
+export interface LogEntry {
+  level: string;
+  message: string;
+  timestamp: string;
 }
 
 export interface BibEntry {
@@ -19,6 +35,7 @@ export interface BibEntry {
   fields: Record<string, string>;
   status: EntryStatus;
   suggestions: FieldSuggestion[];
+  apiMatches: ApiMatch[];
   duplicateInfo?: DuplicateInfo | null;
 }
 
@@ -34,6 +51,7 @@ export interface ValidateResponse {
   total: number;
   issuesFound: number;
   duplicatesIdentified: number;
+  logs: LogEntry[];
 }
 
 export interface ExportResponse {

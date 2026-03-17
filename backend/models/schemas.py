@@ -23,9 +23,29 @@ class FieldSuggestion(BaseModel):
     source: str  # "arxiv" | "dblp" | "scholar"
 
 
+class ApiMatch(BaseModel):
+    """A full match returned by an external API (ArXiv / DBLP / Scholar)."""
+
+    source: str  # "arxiv" | "dblp" | "scholar"
+    title: str = ""
+    authors: list[str] = []
+    year: str = ""
+    venue: str = ""
+    confidence: float = 0.0  # title similarity score
+    fields: dict[str, str] = {}
+
+
 class DuplicateInfo(BaseModel):
     duplicate_of_key: str
     similarity_score: float  # 0.0 – 1.0
+
+
+class LogEntry(BaseModel):
+    """A single backend log message."""
+
+    level: str  # "INFO" | "WARNING" | "ERROR" | "DEBUG"
+    message: str
+    timestamp: str  # ISO-8601
 
 
 class BibEntry(BaseModel):
@@ -34,6 +54,7 @@ class BibEntry(BaseModel):
     fields: dict[str, str]
     status: EntryStatus = EntryStatus.unverified
     suggestions: list[FieldSuggestion] = []
+    api_matches: list[ApiMatch] = []
     duplicate_info: DuplicateInfo | None = None
 
 
@@ -57,6 +78,7 @@ class ValidateResponse(BaseModel):
     total: int
     issues_found: int
     duplicates_identified: int
+    logs: list[LogEntry] = []
 
 
 class ExportRequest(BaseModel):
