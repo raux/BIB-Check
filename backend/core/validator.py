@@ -176,7 +176,7 @@ async def _validate_entry(entry: BibEntry) -> BibEntry:
             entry.key,
         )
 
-        for result in arxiv_results:
+        for idx, result in enumerate(arxiv_results):
             source_title = result.get("title", "")
             confidence = compute_similarity(title, source_title) if title and source_title else 0.0
             authors = result.get("authors", [])
@@ -196,8 +196,8 @@ async def _validate_entry(entry: BibEntry) -> BibEntry:
             )
             api_matches.append(match)
 
-            # Generate suggestion from best ArXiv match
-            if source_title and confidence < 1.0 and result == arxiv_results[0]:
+            # Generate suggestion from the first ArXiv match only
+            if idx == 0 and source_title and confidence < 1.0:
                 suggestions.append(
                     FieldSuggestion(
                         field_name="title",
@@ -249,13 +249,11 @@ async def _validate_entry(entry: BibEntry) -> BibEntry:
             # Generate suggestions from best DBLP match
             if idx == 0:
                 if source_title and confidence < 1.0:
-                    already = any(
-                        s.field_name == "title" and s.source == "arxiv"
-                        for s in suggestions
+                    arxiv_title_conf = next(
+                        (s.confidence for s in suggestions if s.field_name == "title" and s.source == "arxiv"),
+                        0.0,
                     )
-                    if not already or confidence > (
-                        suggestions[0].confidence if suggestions else 0
-                    ):
+                    if arxiv_title_conf == 0.0 or confidence > arxiv_title_conf:
                         suggestions.append(
                             FieldSuggestion(
                                 field_name="title",
