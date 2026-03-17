@@ -159,20 +159,8 @@ const App: React.FC = () => {
 
           {/* Main panel */}
           <div className="flex-1 flex flex-col overflow-hidden bg-white">
-            {selectedEntry ? (
-              <EntryEditor
-                key={selectedEntry.key}
-                entry={selectedEntry}
-                onAcceptSuggestion={handleAcceptSuggestion}
-              />
-            ) : (
-              <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
-                Select an entry from the list.
-              </div>
-            )}
-
-            {/* Bottom bar */}
-            <div className="border-t border-gray-200 bg-gray-50 px-4 py-3 flex items-center justify-between gap-3">
+            {/* Top bar */}
+            <div className="border-b border-gray-200 bg-gray-50 px-4 py-3 flex items-center justify-between gap-3">
               <button
                 onClick={handleReset}
                 className="text-sm text-gray-500 hover:text-gray-700 underline"
@@ -208,6 +196,18 @@ const App: React.FC = () => {
                 </button>
               </div>
             </div>
+
+            {selectedEntry ? (
+              <EntryEditor
+                key={selectedEntry.key}
+                entry={selectedEntry}
+                onAcceptSuggestion={handleAcceptSuggestion}
+              />
+            ) : (
+              <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
+                Select an entry from the list.
+              </div>
+            )}
           </div>
         </main>
       )}
