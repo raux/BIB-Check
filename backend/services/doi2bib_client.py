@@ -42,7 +42,8 @@ def extract_doi(raw_input: str) -> str:
 async def fetch_bibtex(doi: str) -> str:
     """Fetch a BibTeX entry for *doi* from doi.org.
 
-    Returns the BibTeX string on success, or an empty string on failure.
+    Returns the BibTeX string on success, or raises on request errors
+    after exhausting retries.
     """
     url = f"https://doi.org/{doi}"
     headers = {"Accept": "application/x-bibtex; charset=utf-8"}

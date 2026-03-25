@@ -496,7 +496,7 @@ async def test_fetch_bibtex_success():
 
 
 @pytest.mark.asyncio
-async def test_fetch_bibtex_returns_empty_on_failure():
+async def test_fetch_bibtex_raises_on_failure():
     from backend.services.doi2bib_client import fetch_bibtex
 
     mock_response = MagicMock()
