@@ -10,6 +10,7 @@ import {
   uploadBibFile,
   validateEntries,
   exportBib,
+  doi2bib,
 } from "./api/client";
 
 type AppState = "idle" | "loaded" | "validating" | "validated";
@@ -47,6 +48,23 @@ const App: React.FC = () => {
     setError(null);
     try {
       const response = await parseBib(text);
+      setEntries(response.entries);
+      setStats({
+        total: response.total,
+        issuesFound: response.issuesFound,
+        duplicatesIdentified: response.duplicatesIdentified,
+      });
+      setSelectedKey(response.entries[0]?.key ?? null);
+      setAppState("loaded");
+    } catch (e) {
+      setError(String(e));
+    }
+  }, []);
+
+  const handleDoi = useCallback(async (input: string) => {
+    setError(null);
+    try {
+      const response = await doi2bib(input);
       setEntries(response.entries);
       setStats({
         total: response.total,
@@ -146,7 +164,7 @@ const App: React.FC = () => {
 
       {appState === "idle" ? (
         <main className="flex-1 overflow-hidden">
-          <DropZone onFile={handleFile} onText={handleText} />
+          <DropZone onFile={handleFile} onText={handleText} onDoi={handleDoi} />
         </main>
       ) : (
         <main className="flex flex-1 overflow-hidden">

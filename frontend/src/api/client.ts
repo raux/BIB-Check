@@ -99,3 +99,7 @@ export async function fetchLogs(): Promise<LogEntry[]> {
   const json = await res.json();
   return toCamel(json) as LogEntry[];
 }
+
+export async function doi2bib(input: string): Promise<ParseResponse> {
+  return post<ParseResponse>("/doi2bib", { input });
+}

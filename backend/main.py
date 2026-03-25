@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.core import validator
 from backend.core.log_handler import MemoryLogHandler
 from backend.models.schemas import (
+    Doi2BibRequest,
     ExportRequest,
     ExportResponse,
     LogEntry,
@@ -19,6 +20,7 @@ from backend.models.schemas import (
     ValidateRequest,
     ValidateResponse,
 )
+from backend.services import doi2bib_client
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -68,6 +70,27 @@ async def parse_bib_upload(file: UploadFile) -> ParseResponse:
     if not bib_content.strip():
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
     return validator.parse_bib_content(bib_content)
+
+
+@app.post("/doi2bib", response_model=ParseResponse)
+async def doi2bib(request: Doi2BibRequest) -> ParseResponse:
+    """Resolve a DOI (or DOI URL) to BibTeX and return parsed entries."""
+    raw = request.input.strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail="input must not be empty.")
+    doi = doi2bib_client.extract_doi(raw)
+    if not doi:
+        raise HTTPException(
+            status_code=400,
+            detail="Could not extract a valid DOI from the provided input.",
+        )
+    bib_text = await doi2bib_client.fetch_bibtex(doi)
+    if not bib_text.strip():
+        raise HTTPException(
+            status_code=404,
+            detail=f"No BibTeX entry found for DOI: {doi}",
+        )
+    return validator.parse_bib_content(bib_text)
 
 
 @app.post("/validate", response_model=ValidateResponse)

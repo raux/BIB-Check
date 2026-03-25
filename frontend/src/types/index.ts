@@ -58,3 +58,7 @@ export interface ExportResponse {
   bibContent: string;
   appliedFixes: number;
 }
+
+export interface Doi2BibRequest {
+  input: string;
+}

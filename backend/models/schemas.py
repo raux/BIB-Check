@@ -81,6 +81,12 @@ class ValidateResponse(BaseModel):
     logs: list[LogEntry] = []
 
 
+class Doi2BibRequest(BaseModel):
+    """Accept a DOI string or a URL containing a DOI."""
+
+    input: str
+
+
 class ExportRequest(BaseModel):
     entries: list[BibEntry]
     apply_high_confidence: bool = False

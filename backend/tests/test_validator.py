@@ -18,6 +18,7 @@ from backend.core.validator import (
     validate_entries,
 )
 from backend.models.schemas import BibEntry, EntryStatus, FieldSuggestion
+from backend.services.doi2bib_client import extract_doi
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -426,3 +427,98 @@ def test_memory_log_handler_captures_logs():
     assert handler.get_entries() == []
 
     test_logger.removeHandler(handler)
+
+
+# ---------------------------------------------------------------------------
+# DOI extraction tests
+# ---------------------------------------------------------------------------
+
+def test_extract_doi_plain_doi():
+    assert extract_doi("10.1145/1234567.1234568") == "10.1145/1234567.1234568"
+
+
+def test_extract_doi_from_doi_org_url():
+    assert extract_doi("https://doi.org/10.1145/1234567.1234568") == "10.1145/1234567.1234568"
+
+
+def test_extract_doi_from_dx_doi_org_url():
+    assert extract_doi("https://dx.doi.org/10.1038/nphys1170") == "10.1038/nphys1170"
+
+
+def test_extract_doi_from_doi2bib_url():
+    assert extract_doi("https://www.doi2bib.org/bib/10.1145/1234567") == "10.1145/1234567"
+
+
+def test_extract_doi_empty_input():
+    assert extract_doi("") == ""
+
+
+def test_extract_doi_invalid_input():
+    assert extract_doi("not-a-doi") == ""
+
+
+def test_extract_doi_with_whitespace():
+    assert extract_doi("  10.1145/1234567  ") == "10.1145/1234567"
+
+
+# ---------------------------------------------------------------------------
+# doi2bib fetch tests (mocked HTTP)
+# ---------------------------------------------------------------------------
+
+SAMPLE_DOI_BIB = r"""@article{Smith_2020,
+  title = {Deep Learning for NLP},
+  author = {Smith, John},
+  journal = {Journal of AI},
+  year = {2020},
+  doi = {10.1234/example},
+}
+"""
+
+
+@pytest.mark.asyncio
+async def test_fetch_bibtex_success():
+    from backend.services.doi2bib_client import fetch_bibtex
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.text = SAMPLE_DOI_BIB
+
+    with patch("backend.services.doi2bib_client.httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client
+
+        result = await fetch_bibtex("10.1234/example")
+        assert "@article" in result
+        assert "Smith" in result
+
+
+@pytest.mark.asyncio
+async def test_fetch_bibtex_returns_empty_on_failure():
+    from backend.services.doi2bib_client import fetch_bibtex
+
+    mock_response = MagicMock()
+    mock_response.status_code = 404
+    mock_response.raise_for_status = MagicMock(
+        side_effect=Exception("Not Found")
+    )
+
+    with patch("backend.services.doi2bib_client.httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client
+
+        with pytest.raises(Exception):
+            await fetch_bibtex("10.9999/nonexistent")
+
+
+def test_doi2bib_parse_integration():
+    """BibTeX fetched via doi2bib should be parseable by parse_bib_content."""
+    response = parse_bib_content(SAMPLE_DOI_BIB)
+    assert response.total >= 1
+    entry = response.entries[0]
+    assert "title" in entry.fields
