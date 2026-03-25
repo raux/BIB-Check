@@ -57,24 +57,46 @@ def _parse_bibtex(bib_content: str) -> list[BibEntry]:
     try:
         import bibtexparser  # type: ignore[import-untyped]
 
-        database = bibtexparser.loads(bib_content)
         entries: list[BibEntry] = []
-        for raw_entry in database.entries:
-            entry_type = raw_entry.get("ENTRYTYPE", "misc")
-            key = raw_entry.get("ID", "unknown")
-            fields: dict[str, str] = {
-                k: str(v)
-                for k, v in raw_entry.items()
-                if k not in ("ENTRYTYPE", "ID")
-            }
-            entries.append(
-                BibEntry(
-                    key=key,
-                    entry_type=entry_type,
-                    fields=fields,
-                    status=EntryStatus.unverified,
+
+        if hasattr(bibtexparser, "loads"):
+            # bibtexparser v1.x API
+            database = bibtexparser.loads(bib_content)
+            for raw_entry in database.entries:
+                entry_type = raw_entry.get("ENTRYTYPE", "misc")
+                key = raw_entry.get("ID", "unknown")
+                fields: dict[str, str] = {
+                    k: str(v)
+                    for k, v in raw_entry.items()
+                    if k not in ("ENTRYTYPE", "ID")
+                }
+                entries.append(
+                    BibEntry(
+                        key=key,
+                        entry_type=entry_type,
+                        fields=fields,
+                        status=EntryStatus.unverified,
+                    )
                 )
-            )
+        else:
+            # bibtexparser v2.x API
+            library = bibtexparser.parse_string(bib_content)
+            for raw_entry in library.entries:
+                entry_type = raw_entry.entry_type
+                key = raw_entry.key
+                fields = {
+                    k: str(v.value)
+                    for k, v in raw_entry.fields_dict.items()
+                }
+                entries.append(
+                    BibEntry(
+                        key=key,
+                        entry_type=entry_type,
+                        fields=fields,
+                        status=EntryStatus.unverified,
+                    )
+                )
+
         return entries
     except Exception as exc:
         logger.error("BibTeX parsing failed: %s", exc)
